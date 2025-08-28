@@ -58,7 +58,7 @@ async function getCookie() {
         })).data.data;
     }
 }
-const pageSize = 20;
+const pageSize = 100;
 async function searchBase(keyword, page, searchType) {
     await getCookie();
     const params = {

@@ -83,9 +83,8 @@ async function getAlbumInfo(albumItem) {
 }
 
 // 添加这个新函数到你的文件中
+// 替换旧的 getTopLists 函数
 async function getTopLists() {
-    // Navidrome/Subsonic API 提供了多种获取列表的方式，我们将它们定义为不同的榜单
-    // 'id' 字段的设计是关键，它会把API类型信息传递给 getTopListDetail 函数
     return [
         {
             title: "官方榜单",
@@ -99,7 +98,6 @@ async function getTopLists() {
                     id: "type:frequent",
                     title: "播放最多",
                     coverImg: "https://testingcf.jsdelivr.net/gh/maotoumao/MusicFreePlugins@v0.1/dist/navidrome/frequent.png"
-
                 },
                 {
                     id: "type:highest",
@@ -123,21 +121,68 @@ async function getTopLists() {
                 },
             ],
         },
+        // --- 新增的“电台”分类 ---
+        {
+            title: "电台",
+            data: [
+                {
+                    id: "type:radio",
+                    title: "网络电台",
+                    coverImg: "https://testingcf.jsdelivr.net/gh/maotoumao/MusicFreePlugins@v0.1/dist/navidrome/radio.png"
+                }
+            ]
+        },
+        // --- 新增的“全部音乐”分类 ---
+        {
+            title: "浏览全部",
+            data: [
+                {
+                    id: "type:alphabeticalByName",
+                    title: "全部专辑 (按字母排序)",
+                    coverImg: "https://testingcf.jsdelivr.net/gh/maotoumao/MusicFreePlugins@v0.1/dist/navidrome/all.png"
+                }
+            ]
+        }
     ];
 }
 
 
+// 替换旧的 getTopListDetail 函数
+// 替换旧的 getTopListDetail 函数
 async function getTopListDetail(topListItem) {
-    // 1. 从 id 中解析出 API 类型
     if (!topListItem.id || !topListItem.id.startsWith("type:")) {
         return { isEnd: true, musicList: [] };
     }
     const apiType = topListItem.id.split(':')[1];
 
-    // 2. 调用 httpGet 获取榜单上的专辑列表 (这里我们取前 20 个专辑)
+    // --- 处理电台类型的逻辑 ---
+    if (apiType === 'radio') {
+        const radioData = await httpGet('getInternetRadioStations');
+        
+        // *** 关键修改处 ***
+        // 根据你提供的 OpenSubsonic 响应，正确的路径是 internetRadioStation
+        const stations = radioData['subsonic-response']?.internetRadioStations?.internetRadioStation;
+
+        if (!stations || stations.length === 0) {
+            return { isEnd: true, musicList: [] };
+        }
+        // 将电台数据格式化为 musicList
+        const musicList = stations.map(station => ({
+            id: station.id,
+            title: station.name,
+            artist: "网络电台", // 电台没有歌手，给一个默认值
+            artwork: "https://testingcf.jsdelivr.net/gh/maotoumao/MusicFreePlugins@v0.1/dist/navidrome/radio.png", // 使用默认封面
+            duration: 0, // 直播流没有时长
+            url: station.streamUrl // 直接保存播放链接
+        }));
+        return { isEnd: true, musicList };
+    }
+    // --- 电台逻辑结束 ---
+
+    // 原有的获取专辑列表逻辑，保持不变
     const albumListData = await httpGet('getAlbumList2', {
         type: apiType,
-        size: 20 
+        size: 999
     });
 
     const albums = albumListData['subsonic-response']?.albumList2?.album;
@@ -145,23 +190,18 @@ async function getTopListDetail(topListItem) {
         return { isEnd: true, musicList: [] };
     }
 
-    // 3. 并发地获取每个专辑下的所有歌曲
-    // 使用 Promise.all 可以大大提高效率
     const songPromises = albums.map(album => httpGet('getAlbum', { id: album.id }));
     const albumDetailsResults = await Promise.all(songPromises);
 
-    // 4. 将所有专辑中的歌曲合并成一个列表，并格式化
     const musicList = albumDetailsResults
         .flatMap(result => result['subsonic-response']?.album?.song || [])
         .map(formatMusicItem);
 
     return {
-        // 因为我们一次性获取了所有歌曲，所以 isEnd 总是 true
         isEnd: true,
         musicList: musicList
     };
 }
-
 
 
 module.exports = {
@@ -169,7 +209,7 @@ module.exports = {
     version: "0.0.0",
     author: 'ninglang',
     appVersion: ">0.1.0-alpha.0",
-    srcUrl: "https://raw.githubusercontent.com/yzmninglang/bili-musicfree/refs/heads/main/index.js",
+    srcUrl: "https://share.ninglang.top:7012/Android/musicfree/plugin/Navidrome.js",
     cacheControl: "no-cache",
     userVariables: [
         {
