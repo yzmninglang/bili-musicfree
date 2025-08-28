@@ -467,8 +467,54 @@ async function getTopListDetail(topListItem) {
     return Object.assign(Object.assign({}, topListItem), { musicList: res.data.data.list.map(formatMedia) });
 }
 
-// 新增的函数，用于获取合集内容
-// 替换旧的 getCollectionList 函数
+
+
+/**
+ * 根据用户 mid 获取其昵称。
+ * @param {string | number} mid - 目标用户的 mid。
+ * @returns {Promise<string|null>} - 返回用户的昵称字符串，如果找不到或发生错误则返回 null。
+ */
+async function getOwnerName(mid) {
+  try {
+    const response = await axios_1.default.get("https://api.bilibili.com/x/space/top/arc", {
+      params: {
+        vmid: mid,
+      },
+    });
+
+    const data = response.data;
+
+    // 检查 API 请求是否成功
+    if (data.code === 0) {
+      // 从返回数据中提取 owner.name
+      if (data.data && data.data.owner && data.data.owner.name) {
+        return data.data.owner.name;
+      }
+    } else if (data.code === 53016) {
+      // 这是一个已知的“错误”：用户没有置顶视频。
+      // 我们可以尝试从另一个接口获取信息，但目前为了简单起见，我们先认为获取失败。
+      // 在实际应用中，可以在这里增加一个备用 API 调用。
+      console.warn(`用户 (mid: ${mid}) 没有置顶视频，无法通过此 API 获取昵称。`);
+      return null;
+    } else {
+      console.warn(`获取用户 (mid: ${mid}) 昵称失败，API 返回: ${data.message}`);
+      return null;
+    }
+  } catch (error) {
+    console.error(`获取用户 (mid: ${mid}) 昵称时发生网络错误:`, error);
+    return null;
+  }
+  return null;
+}
+
+
+
+
+
+
+
+
+
 async function getCollectionList(mid, season_id) {
   const result = [];
   const pageSize = 30;
@@ -482,16 +528,24 @@ async function getCollectionList(mid, season_id) {
 
   // 为了让返回的数据结构与收藏夹的结构一致（都包含作者信息），
   // 我们先单独请求一次作者的昵称。
-  let authorName = '';
+  let authorName = 'NULL';
   try {
-      const authorInfoRes = await axios_1.default.get(`https://api.bilibili.com/x/space/acc/info?mid=${mid}`);
-      if(authorInfoRes.data.code === 0) {
-          authorName = authorInfoRes.data.data.name;
-      }
+    // const authorInfoRes = await axios_1.default.get(`https://api.bilibili.com/x/space/acc/info?mid=${mid}`);
+    //  const authorInfoRes= await getOwnerName(mid); 
+    //  if(authorInfoRes){
+    //   authorName = authorInfoRes; 
+    //  }
+    //   console.log(`authorname:${authorName}`)
+    //   const authorInfoRes = await axios_1.default.get(`https://api.bilibili.com/x/space/acc/info?mid=${mid}`);
+    //   if(authorInfoRes.data.code === 0) {
+    //       authorName = authorInfoRes.data.data.name;
+    //   }
   } catch(e) {
-      console.warn("获取合集作者信息失败, artist 字段将为空");
+    // const authorName ='';
+    console.warn("获取合集作者信息失败, artist 字段将为空");
   }
 
+    // const loopAxios = require("axios").default;
 
   while (true) {
     try {
@@ -518,12 +572,15 @@ async function getCollectionList(mid, season_id) {
           break;
         }
 
-        // 为每个视频对象注入作者信息，以匹配 musicSheet 的数据结构要求
+        
+        archives.forEach(video => {
+            // 为每个视频对象注入作者信息，以匹配 musicSheet 的数据结构要求
         if (authorName) {
-            archives.forEach(video => {
-                video.owner = { name: authorName };
-            });
+            video.owner = { name: authorName };
         }
+            video.id = video.aid;
+        });
+
         
         result.push(...archives);
 
@@ -545,6 +602,8 @@ async function getCollectionList(mid, season_id) {
   }
   return result;
 }
+
+
 
 
 async function importMusicSheet(urlLike) {
@@ -646,9 +705,9 @@ module.exports = {
     platform: "bilibili",
     appVersion: ">=0.0",
     version: "0.2.3",
-    author: "猫头猫",
+    author: "ninglang",
     cacheControl: "no-cache",
-    srcUrl: "https://gitee.com/maotoumao/MusicFreePlugins/raw/v0.1/dist/bilibili/index.js",
+    srcUrl: "https://raw.githubusercontent.com/yzmninglang/bili-musicfree/refs/heads/main/bilibili.js",
     primaryKey: ["id", "aid", "bvid", "cid"],
     hints: {
         importMusicSheet: [
@@ -691,5 +750,6 @@ module.exports = {
     getTopLists,
     getTopListDetail,
     importMusicSheet,
-    getMusicComments
+    getMusicComments,
+    getOwnerName
 };
