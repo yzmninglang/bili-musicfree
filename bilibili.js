@@ -604,9 +604,64 @@ async function getCollectionList(mid, season_id) {
 }
 
 
+/**
+ * (增强版) 根据 bvid 获取视频的所有分P列表，并直接格式化为 musicSheet 兼容的结构。
+ * @param {string} bvid - 视频的 BV 号。
+ * @returns {Promise<Array|null>} 返回一个结构完整的 musicSheet 数组，如果失败则返回 null。
+ */
+async function getPListPage(bvid) {
+  try {
+    // 使用 Promise.all 并发请求主视频信息和分P列表，提高效率
+    const [mainInfoRes, pListRes] = await Promise.all([
+      // getCid 实际调用的是 /view API，能获取到视频的详细信息
+      axios_1.default.get('https://api.bilibili.com/x/web-interface/view', { params: { bvid } }),
+      axios_1.default.get('https://api.bilibili.com/x/player/pagelist', { params: { bvid, jsonp: 'jsonp' } })
+    ]);
+
+    // 检查两个 API 请求是否都成功
+    if (pListRes.data.code === 0 && mainInfoRes.data.code === 0) {
+      const mainInfo = mainInfoRes.data.data;
+      const pList = pListRes.data.data;
+
+      // 将分P列表格式化为与其他列表（如收藏夹）兼容的结构
+      const musicSheet = pList.map(p_item => ({
+        id: p_item.cid,         // 关键：id 使用 cid 赋值
+        cid: p_item.cid,
+        aid: mainInfo.aid,      // 从主视频信息中获取 aid
+        bvid: bvid,             // bvid 对所有分P都是一样的
+        title: p_item.part,     // 分P的标题是 part 字段
+        duration: p_item.duration,
+        // 注入封面和作者信息，以便后续的 map 函数能正确处理
+        owner: mainInfo.owner, 
+        cover: mainInfo.pic,
+        pic: mainInfo.pic 
+      }));
+      
+      return musicSheet; // 直接返回格式化好的 musicSheet
+    } else {
+      console.warn(`获取分P或主信息失败 (bvid: ${bvid})`);
+      return null;
+    }
+  } catch (error) {
+    console.error(`获取分P列表时发生网络错误 (bvid: ${bvid}):`, error);
+    return null;
+  }
+}
+
+
 
 
 async function importMusicSheet(urlLike) {
+    let musicSheet;
+    // 1. 优先处理单个视频（可能含分P）的链接
+    const bvidMatch = urlLike.match(/\/video\/(BV[a-zA-Z0-9]+)/);
+    if (bvidMatch) {
+        const bvid = bvidMatch[1];
+        console.log(`检测到B站视频链接, bvid: ${bvid}`);
+        musicSheet = await getPListPage(bvid); // 直接调用增强版函数
+    } else {
+
+
     var _a, _b, _c, _d, _e, _f;
     let favId, seriesId, mid;
 
@@ -632,7 +687,6 @@ async function importMusicSheet(urlLike) {
     }
     
     console.log(`favId:${favId}`)
-    let musicSheet;
 
     if (seriesId && mid) {
         console.log(`检测到合集, mid: ${mid}, sid: ${seriesId}`);
@@ -643,6 +697,10 @@ async function importMusicSheet(urlLike) {
     } else {
         return; // 无法识别的 URL
     }
+    }
+    if (!musicSheet) {
+      return; // 如果所有逻辑都没匹配到，或API请求失败，则返回
+    }
 
     // 后续的数据格式化部分保持不变
     return musicSheet.map((_) => {
@@ -650,6 +708,7 @@ async function importMusicSheet(urlLike) {
         return ({
             id: _.id,
             aid: _.aid,
+            cid: _.cid ?? null, // 有些API没有cid字段
             bvid: _.bvid,
             artwork: _.pic || _.cover, // 字段名在不同API中可能不同 (合集是 pic)
             title: _.title,
